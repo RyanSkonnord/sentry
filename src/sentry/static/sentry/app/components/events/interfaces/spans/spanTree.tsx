@@ -299,9 +299,11 @@ class SpanTree extends React.Component<PropType> {
       viewEnd: dragProps.viewWindowEnd,
     });
 
+    const hasOrphanSpans = trace.orphanSpans.length > 0;
+
     const renderedRoot = this.renderSpan({
       isRoot: true,
-      isLast: true,
+      isLast: !hasOrphanSpans,
       spanNumber: 1,
       treeDepth: 0,
       continuingTreeDepths: [],
@@ -326,16 +328,16 @@ class SpanTree extends React.Component<PropType> {
       renderedSpanChildren: [],
       nextSpanNumber: renderedRoot.nextSpanNumber,
       numOfSpansOutOfViewAbove: renderedRoot.numOfSpansOutOfViewAbove,
-      numOfFilteredSpansAbove: renderedRoot.numOfSpansOutOfViewAbove,
+      numOfFilteredSpansAbove: renderedRoot.numOfFilteredSpansAbove,
     };
 
     const reduced: AccType = trace.orphanSpans.reduce(
-      (acc: AccType, orphanSpan: RawSpanType) => {
+      (acc: AccType, orphanSpan: RawSpanType, currentIndex: number) => {
         const key = `${orphanSpan.trace_id}${orphanSpan.span_id}`;
 
         const renderedOrphan = this.renderSpan({
           isRoot: true,
-          isLast: true,
+          isLast: trace.orphanSpans.length - 1 === currentIndex,
           spanNumber: acc.nextSpanNumber,
           treeDepth: 0,
           continuingTreeDepths: [],
