@@ -445,13 +445,12 @@ export function parseTrace(event: Readonly<SentryTransactionEvent>): ParsedTrace
   });
 
   // TODO: debug
-  orphanSpans = orphanSpans.slice(0, 5);
-  spans = spans.filter(span => {
-    return !!!orphanSpans.find(orphanSpan => {
-      return span.span_id === orphanSpan.span_id;
-    });
-  });
-
+  const result = orphanTheseSpans(
+    spans,
+    new Set(['86620893f627b0a6', 'b9884f1007035621'])
+  );
+  spans = result.spans;
+  orphanSpans = result.orphanSpans;
   console.log('orphanSpans', orphanSpans);
 
   const init: ParsedTraceType = {
@@ -527,4 +526,23 @@ function sortSpansAscending(firstSpan: RawSpanType, secondSpan: RawSpanType) {
   }
 
   return 1;
+}
+
+// DEBUG
+function orphanTheseSpans(spans: Array<RawSpanType>, needleSpanIds: Set<string>) {
+  const orphanSpans: RawSpanType[] = [];
+
+  spans = spans.filter(span => {
+    if (needleSpanIds.has(span.span_id)) {
+      orphanSpans.push(span);
+      return false;
+    }
+
+    return true;
+  });
+
+  return {
+    spans,
+    orphanSpans,
+  };
 }
