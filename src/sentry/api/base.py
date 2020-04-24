@@ -17,6 +17,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from simplejson import JSONDecodeError
 
+import sentry_sdk
+
 from sentry import tsdb
 from sentry.auth import access
 from sentry.models import Environment
@@ -201,7 +203,10 @@ class Endpoint(APIView):
         if origin:
             self.add_cors_headers(request, response)
 
-        self.response = self.finalize_response(request, response, *args, **kwargs)
+        with sentry_sdk.start_span(op='finalize_response'):
+            self.response = self.finalize_response(request, response, *args, **kwargs)
+
+        self.response = self.response.render()
 
         return self.response
 
