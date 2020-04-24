@@ -9,6 +9,8 @@ from django.db.models import Q
 from django.db.models.aggregates import Count
 from django.utils import timezone
 
+import sentry_sdk
+
 from sentry import options, roles, tsdb, projectoptions
 from sentry.api.serializers import register, serialize, Serializer
 from sentry.api.serializers.models.plugin import PluginSerializer
@@ -164,19 +166,22 @@ class ProjectSerializer(Serializer):
         from sentry.features.base import ProjectFeature
 
         # Retrieve all registered organization features
-        project_features = features.all(feature_type=ProjectFeature).keys()
-        feature_list = set()
+        with sentry_sdk.start_span(op="fetch_all_project_features"):
+            project_features = features.all(feature_type=ProjectFeature).keys()
 
-        for feature_name in project_features:
-            if not feature_name.startswith("projects:"):
-                continue
-            if features.has(feature_name, obj, actor=user):
-                # Remove the project scope prefix
-                feature_list.add(feature_name[len("projects:") :])
-
-        if obj.flags.has_releases:
-            feature_list.add("releases")
-        return feature_list
+        with sentry_sdk.start_span(op="build_feature_list"):
+            feature_list = set(
+                feature_name[len("projects:") :]  # Remove the project scope prefix
+                for feature_name in project_features
+                if (
+                    feature_name.startswith("projects:")
+                    and features.has(feature_name, obj, actor=user)
+                )
+            )
+            if obj.flags.has_releases:
+                feature_list.add("releases")
+            return feature_list
+        # return set()
 
     def serialize(self, obj, attrs, user):
         feature_list = self.get_feature_list(obj, user)
@@ -350,28 +355,30 @@ class ProjectSummarySerializer(ProjectWithTeamSerializer):
         return attrs
 
     def serialize(self, obj, attrs, user):
-        feature_list = self.get_feature_list(obj, user)
-        context = {
-            "team": attrs["teams"][0] if attrs["teams"] else None,
-            "teams": attrs["teams"],
-            "id": six.text_type(obj.id),
-            "name": obj.name,
-            "slug": obj.slug,
-            "isBookmarked": attrs["is_bookmarked"],
-            "isMember": attrs["is_member"],
-            "hasAccess": attrs["has_access"],
-            "dateCreated": obj.date_added,
-            "environments": attrs["environments"],
-            "features": feature_list,
-            "firstEvent": obj.first_event,
-            "platform": obj.platform,
-            "platforms": attrs["platforms"],
-            "latestDeploys": attrs["deploys"],
-            "latestRelease": attrs["latest_release"],
-            "hasUserReports": attrs["has_user_reports"],
-        }
-        if "stats" in attrs:
-            context["stats"] = attrs["stats"]
+        with sentry_sdk.start_span(op="get_feature_list"):
+            feature_list = self.get_feature_list(obj, user)
+        with sentry_sdk.start_span(op="build_context_dict"):
+            context = {
+                "team": attrs["teams"][0] if attrs["teams"] else None,
+                "teams": attrs["teams"],
+                "id": six.text_type(obj.id),
+                "name": obj.name,
+                "slug": obj.slug,
+                "isBookmarked": attrs["is_bookmarked"],
+                "isMember": attrs["is_member"],
+                "hasAccess": attrs["has_access"],
+                "dateCreated": obj.date_added,
+                "environments": attrs["environments"],
+                "features": feature_list,
+                "firstEvent": obj.first_event,
+                "platform": obj.platform,
+                "platforms": attrs["platforms"],
+                "latestDeploys": attrs["deploys"],
+                "latestRelease": attrs["latest_release"],
+                "hasUserReports": attrs["has_user_reports"],
+            }
+            if "stats" in attrs:
+                context["stats"] = attrs["stats"]
         return context
 
 

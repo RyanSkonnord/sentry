@@ -109,11 +109,15 @@ class OrganizationProjectsEndpoint(OrganizationEndpoint, EnvironmentMixin):
 
             # TODO(davidenwang): remove this after frontend requires only paginated projects
             get_all_projects = request.GET.get("all_projects") == "1"
-            span.set_data('get_all_projects', get_all_projects)
+            span.set_data("get_all_projects", get_all_projects)
 
             if get_all_projects:
                 queryset = queryset.order_by("slug").select_related("organization")
-                response = Response(serialize(list(queryset), request.user, ProjectSummarySerializer()))
+                result = list(queryset)
+                user = request.user
+                serializer = ProjectSummarySerializer()
+                serialized = serialize(result, user, serializer)
+                response = Response(serialized)
                 # rendered = response.render()
                 # again = rendered.render()
                 return response
@@ -124,7 +128,7 @@ class OrganizationProjectsEndpoint(OrganizationEndpoint, EnvironmentMixin):
                     serializer = ProjectSummarySerializer(
                         environment_id=environment_id, stats_period=stats_period
                     )
-                    with sentry_sdk.start_span(op='project_serializer_callback'):
+                    with sentry_sdk.start_span(op="project_serializer_callback"):
                         serialize(results, request.user, serializer)
 
                 return self.paginate(
