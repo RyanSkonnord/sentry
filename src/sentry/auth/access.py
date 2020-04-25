@@ -360,9 +360,13 @@ def from_member(member, scopes=None):
     requires_sso, sso_is_valid = _sso_params(member)
 
     team_list = member.get_teams()
-    project_list = list(
-        Project.objects.filter(status=ProjectStatus.VISIBLE, teams__in=team_list).distinct()
-    )
+    import sentry_sdk
+
+    with sentry_sdk.start_span(op="from_member_project_list") as span:
+        project_list = list(
+            Project.objects.filter(status=ProjectStatus.VISIBLE, teams__in=team_list).distinct()
+        )
+        span.set_data("Project Count", len(project_list))
 
     if scopes is not None:
         scopes = set(scopes) & member.get_scopes()

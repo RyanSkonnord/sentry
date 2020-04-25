@@ -4,6 +4,8 @@ import six
 from rest_framework.exceptions import PermissionDenied, ParseError
 from django.core.cache import cache
 
+import sentry_sdk
+
 from sentry.api.base import Endpoint
 from sentry.api.exceptions import ResourceDoesNotExist
 from sentry.api.helpers.environments import get_environments
@@ -192,9 +194,10 @@ class OrganizationEndpoint(Endpoint):
         :return: A list of Project objects, or raises PermissionDenied.
         """
         project_ids = self.get_requested_project_ids(request)
-        return self._get_projects_by_id(
-            project_ids, request, organization, force_global_perms, include_all_accessible
-        )
+        with sentry_sdk.start_span(op="get_projects_by_id"):
+            return self._get_projects_by_id(
+                project_ids, request, organization, force_global_perms, include_all_accessible
+            )
 
     def _get_projects_by_id(
         self,
@@ -217,19 +220,24 @@ class OrganizationEndpoint(Endpoint):
         if project_ids:
             qs = qs.filter(id__in=project_ids)
 
-        if force_global_perms:
+        with sentry_sdk.start_span(op="fetch_projects"):
             projects = list(qs)
-        else:
-            if (
-                user
-                and is_active_superuser(request)
-                or requested_projects
-                or include_all_accessible
-            ):
-                func = request.access.has_project_access
+        with sentry_sdk.start_span(op="apply_project_permissions") as span:
+            if force_global_perms:
+                span.set_tag("mode", "force_global_perms")
             else:
-                func = request.access.has_project_membership
-            projects = [p for p in qs if func(p)]
+                if (
+                    user
+                    and is_active_superuser(request)
+                    or requested_projects
+                    or include_all_accessible
+                ):
+                    span.set_tag("mode", "has_project_access")
+                    func = request.access.has_project_access
+                else:
+                    span.set_tag("mode", "has_project_membership")
+                    func = request.access.has_project_membership
+                projects = [p for p in projects if func(p)]
 
         project_ids = set(p.id for p in projects)
 
@@ -280,26 +288,29 @@ class OrganizationEndpoint(Endpoint):
         return params
 
     def convert_args(self, request, organization_slug, *args, **kwargs):
-        try:
-            organization = Organization.objects.get_from_cache(slug=organization_slug)
-        except Organization.DoesNotExist:
-            raise ResourceDoesNotExist
+        with sentry_sdk.start_span(op="organization_convert_args"):
+            try:
+                organization = Organization.objects.get_from_cache(slug=organization_slug)
+            except Organization.DoesNotExist:
+                raise ResourceDoesNotExist
 
-        self.check_object_permissions(request, organization)
+            with sentry_sdk.start_span(op="check_object_permissions"):
+                self.check_object_permissions(request, organization)
 
-        bind_organization_context(organization)
+            with sentry_sdk.start_span(op="bind_organization_context"):
+                bind_organization_context(organization)
 
-        request._request.organization = organization
+            request._request.organization = organization
 
-        # Track the 'active' organization when the request came from
-        # a cookie based agent (react app)
-        # Never track any org (regardless of whether the user does or doesn't have
-        # membership in that org) when the user is in active superuser mode
-        if request.auth is None and request.user and not is_active_superuser(request):
-            request.session["activeorg"] = organization.slug
+            # Track the 'active' organization when the request came from
+            # a cookie based agent (react app)
+            # Never track any org (regardless of whether the user does or doesn't have
+            # membership in that org) when the user is in active superuser mode
+            if request.auth is None and request.user and not is_active_superuser(request):
+                request.session["activeorg"] = organization.slug
 
-        kwargs["organization"] = organization
-        return (args, kwargs)
+            kwargs["organization"] = organization
+            return (args, kwargs)
 
 
 class OrganizationReleasesBaseEndpoint(OrganizationEndpoint):
