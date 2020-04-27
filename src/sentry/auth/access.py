@@ -186,12 +186,12 @@ class Access(BaseAccess):
         role=None,
     ):
         self.organization_id = organization_id
-        self.teams = teams
-        self.projects = projects
+        self.teams = frozenset(teams)
+        self.projects = list(projects)
         self.has_global_access = has_global_access
-        self.scopes = scopes
+        self.scopes = frozenset(scopes)
         if permissions is not None:
-            self.permissions = permissions
+            self.permissions = frozenset(permissions)
         if role is not None:
             self.role = role
 

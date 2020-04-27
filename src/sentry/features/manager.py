@@ -84,7 +84,8 @@ class FeatureManager(object):
     def _get_plugin_value(self, feature, actor):
         from sentry.plugins.base import plugins
 
-        for plugin in plugins.all(version=2):
+        all_plugins = tuple(plugins.all(version=2))
+        for plugin in all_plugins:
             handlers = safe_execute(plugin.get_feature_hooks, _with_transaction=False)
             for handler in handlers or ():
                 rv = handler(feature, actor)
