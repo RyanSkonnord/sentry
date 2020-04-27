@@ -513,6 +513,9 @@ export function parseTrace(event: Readonly<SentryTransactionEvent>): ParsedTrace
     spanChildren.sort(sortSpansAscending);
   });
 
+  // TODO: sort orphan children in ascending order
+  // TODO: add orphan children to spanChildren
+
   return reduced;
 }
 
